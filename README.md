@@ -33,9 +33,6 @@ A community-maintained Discord bot for the Code Platoon Alumni server. The bot f
 ---
 
 ## 🧩 Slash Commands (planned)
-- `/events set-channel <#channel>` — set announcements channel
-- `/rundown set-channel <#channel>` — set monthly rundown channel
-- `/policy set-regex <pattern>` — update name policy regex
 - `/audit run` — run name audit manually
 - `/privacy` — show privacy policy link
 
