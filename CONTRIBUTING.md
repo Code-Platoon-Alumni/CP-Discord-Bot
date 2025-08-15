@@ -61,7 +61,7 @@ By participating in this project, you agree to abide by its terms.
 - **Persistence:** None (stateless audits based on join date)
 - **Hosting:** Railway / Render / Docker on VPS
 - **Config:** `.env` + `python-dotenv`
-- **Logging:** `logging`
+- **Logging:** `post to logging channel`
 - **Testing:** `pytest`
 - **CI:** GitHub Actions (lint, test)
 
@@ -71,12 +71,15 @@ By participating in this project, you agree to abide by its terms.
 ```
 / (root)
   ├─ .github/
+  │   ├─ PULL_REQUEST_TEMPLATE.md
   │   ├─ ISSUE_TEMPLATE/
   │   │   ├─ bug_report.yml
   │   │   ├─ feature_request.yml
   │   │   └─ task.yml
   │   └─ workflows/
-  │       └─ ci.yml
+  │   │   ├─ project-issues.yml
+  │   │   ├─ project-prs.yml
+  │       └─ ci.yml (to be added)
   ├─ bot/ (to be added)
   ├─ .env.example
   ├─ CONTRIBUTING.md
