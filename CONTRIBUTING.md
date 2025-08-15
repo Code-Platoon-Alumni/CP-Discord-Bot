@@ -43,13 +43,13 @@ By participating in this project, you agree to abide by its terms.
 3. **Request assignment** - Comment "I'd like to work on this" on the issue
 4. **Wait for assignment** - A maintainer will assign you and may provide additional context
 5. **Work on your assigned issue** - Create your fork and feature branch after assignment
-6. **Submit your PR** - Reference the issue number in your PR description
+6. **Submit your PR** - Reference the issue number in your PR description using #issueNumber
 
 ### For Maintainers:
 - **Verify contributor eligibility** - Confirm contributors are Code Platoon Alumni before assignment
 - Assign issues promptly to requesting contributors
 - Provide clear acceptance criteria and context when assigning
-- Use issue labels to indicate status: `assigned`, `in-progress`, `needs-review`
+- Use issue labels to indicate status: `assigned`
 - Reassign stale issues after 7 days of inactivity (with notice to the assignee)
 
 ---

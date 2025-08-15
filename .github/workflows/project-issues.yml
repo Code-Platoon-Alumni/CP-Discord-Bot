@@ -1,0 +1,223 @@
+name: Project Sync — Issues
+
+on:
+  issues:
+    types: [opened, labeled, closed]
+
+jobs:
+  handle_issue_events:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure issue is in project & set initial status
+        if: github.event.action == 'opened'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          script: |
+            const projectId = process.env.PROJECT_ID;
+            const statusFieldId = process.env.STATUS_FIELD_ID;
+            const ready = process.env.READY_OPTION_ID;
+            const backlog = process.env.BACKLOG_OPTION_ID;
+            const inProgress = process.env.IN_PROGRESS_OPTION_ID;
+
+            const issueNodeId = context.payload.issue.node_id;
+            const labels = (context.payload.issue.labels || []).map(l => (typeof l === 'string' ? l : l.name.toLowerCase()));
+
+            async function ensureItem(projectId, contentId) {
+              try {
+                const result = await github.graphql(`
+                  mutation($projectId:ID!, $contentId:ID!) {
+                    addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                      item { id }
+                    }
+                  }
+                `, { projectId, contentId });
+                return result.addProjectV2ItemById.item.id;
+              } catch (e) {
+                // Fallback: find existing item
+                const q = await github.graphql(`
+                  query($contentId:ID!) {
+                    node(id: $contentId) {
+                      ... on Issue {
+                        projectV2Items(first: 50) {
+                          nodes { id project { id } }
+                        }
+                      }
+                    }
+                  }
+                `, { contentId });
+                const items = q.node?.projectV2Items?.nodes || [];
+                const found = items.find(n => n.project?.id === projectId);
+                if (!found) throw e;
+                return found.id;
+              }
+            }
+
+            async function setStatus(itemId, optionId) {
+              await github.graphql(`
+                mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, { projectId, itemId, fieldId: statusFieldId, optionId });
+            }
+
+            const itemId = await ensureItem(projectId, issueNodeId);
+
+            // Determine initial column:
+            // default -> Ready unless labeled on hold or assigned at creation
+            if (labels.includes('on hold')) {
+              await setStatus(itemId, backlog);
+            } else if (labels.includes('assigned')) {
+              await setStatus(itemId, inProgress);
+            } else {
+              await setStatus(itemId, ready);
+            }
+
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
+          READY_OPTION_ID: ${{ secrets.READY_OPTION_ID }}
+          BACKLOG_OPTION_ID: ${{ secrets.BACKLOG_OPTION_ID }}
+          IN_PROGRESS_OPTION_ID: ${{ secrets.IN_PROGRESS_OPTION_ID }}
+
+      - name: Move on label -> on hold => Backlog; assigned => In Progress
+        if: github.event.action == 'labeled'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          script: |
+            const label = context.payload.label.name.toLowerCase();
+            if (!['on hold', 'assigned'].includes(label)) {
+              core.info(`Label ${label} not mapped; skipping.`);
+              return;
+            }
+            const projectId = process.env.PROJECT_ID;
+            const statusFieldId = process.env.STATUS_FIELD_ID;
+            const backlog = process.env.BACKLOG_OPTION_ID;
+            const inProgress = process.env.IN_PROGRESS_OPTION_ID;
+            const issueNodeId = context.payload.issue.node_id;
+
+            async function ensureItem(projectId, contentId) {
+              try {
+                const result = await github.graphql(`
+                  mutation($projectId:ID!, $contentId:ID!) {
+                    addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                      item { id }
+                    }
+                  }
+                `, { projectId, contentId });
+                return result.addProjectV2ItemById.item.id;
+              } catch (e) {
+                const q = await github.graphql(`
+                  query($contentId:ID!) {
+                    node(id: $contentId) {
+                      ... on Issue {
+                        projectV2Items(first: 50) {
+                          nodes { id project { id } }
+                        }
+                      }
+                    }
+                  }
+                `, { contentId });
+                const items = q.node?.projectV2Items?.nodes || [];
+                const found = items.find(n => n.project?.id === projectId);
+                if (!found) throw e;
+                return found.id;
+              }
+            }
+
+            async function setStatus(itemId, optionId) {
+              await github.graphql(`
+                mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, { projectId, itemId, fieldId: statusFieldId, optionId });
+            }
+
+            const itemId = await ensureItem(projectId, issueNodeId);
+            if (label === 'on hold') {
+              await setStatus(itemId, backlog);
+            } else if (label === 'assigned') {
+              await setStatus(itemId, inProgress);
+            }
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
+          BACKLOG_OPTION_ID: ${{ secrets.BACKLOG_OPTION_ID }}
+          IN_PROGRESS_OPTION_ID: ${{ secrets.IN_PROGRESS_OPTION_ID }}
+
+      - name: Move on close -> Done
+        if: github.event.action == 'closed'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          script: |
+            const projectId = process.env.PROJECT_ID;
+            const statusFieldId = process.env.STATUS_FIELD_ID;
+            const done = process.env.DONE_OPTION_ID;
+            const issueNodeId = context.payload.issue.node_id;
+
+            async function ensureItem(projectId, contentId) {
+              try {
+                const result = await github.graphql(`
+                  mutation($projectId:ID!, $contentId:ID!) {
+                    addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                      item { id }
+                    }
+                  }
+                `, { projectId, contentId });
+                return result.addProjectV2ItemById.item.id;
+              } catch (e) {
+                const q = await github.graphql(`
+                  query($contentId:ID!) {
+                    node(id: $contentId) {
+                      ... on Issue {
+                        projectV2Items(first: 50) {
+                          nodes { id project { id } }
+                        }
+                      }
+                    }
+                  }
+                `, { contentId });
+                const items = q.node?.projectV2Items?.nodes || [];
+                const found = items.find(n => n.project?.id === projectId);
+                if (!found) throw e;
+                return found.id;
+              }
+            }
+
+            async function setStatus(itemId, optionId) {
+              await github.graphql(`
+                mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, { projectId, itemId, fieldId: statusFieldId, optionId });
+            }
+
+            const itemId = await ensureItem(projectId, issueNodeId);
+            await setStatus(itemId, done);
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
+          DONE_OPTION_ID: ${{ secrets.DONE_OPTION_ID }}

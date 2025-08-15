@@ -1,0 +1,171 @@
+name: Project Sync — PRs
+
+on:
+  pull_request:
+    types: [opened, closed]
+
+jobs:
+  handle_pr_events:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse linked issues from PR body
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || "";
+            const refs = [...body.matchAll(/#(\d+)/g)].map(m => Number(m[1]));
+            core.setOutput('issue_numbers', JSON.stringify([...new Set(refs)]));
+
+      - name: Move linked issues to Under Review on PR open
+        if: github.event.action == 'opened'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          script: |
+            const issues = JSON.parse(core.getInput('issue_numbers', { required: true }));
+            if (!issues.length) { core.info('No referenced issues.'); return; }
+
+            const projectId = process.env.PROJECT_ID;
+            const statusFieldId = process.env.STATUS_FIELD_ID;
+            const underReview = process.env.UNDER_REVIEW_OPTION_ID;
+
+            async function issueNodeId(number) {
+              const q = await github.graphql(`
+                query($owner:String!, $repo:String!, $number:Int!) {
+                  repository(owner:$owner, name:$repo) {
+                    issue(number:$number) { node_id }
+                  }
+                }
+              `, { owner: context.repo.owner, repo: context.repo.repo, number });
+              return q.repository.issue.node_id;
+            }
+            async function ensureItem(projectId, contentId) {
+              try {
+                const result = await github.graphql(`
+                  mutation($projectId:ID!, $contentId:ID!) {
+                    addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                      item { id }
+                    }
+                  }
+                `, { projectId, contentId });
+                return result.addProjectV2ItemById.item.id;
+              } catch (e) {
+                const q = await github.graphql(`
+                  query($contentId:ID!) {
+                    node(id: $contentId) {
+                      ... on Issue {
+                        projectV2Items(first: 50) {
+                          nodes { id project { id } }
+                        }
+                      }
+                    }
+                  }
+                `, { contentId });
+                const items = q.node?.projectV2Items?.nodes || [];
+                const found = items.find(n => n.project?.id === projectId);
+                if (!found) throw e;
+                return found.id;
+              }
+            }
+            async function setStatus(itemId, optionId) {
+              await github.graphql(`
+                mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, { projectId, itemId, fieldId: statusFieldId, optionId });
+            }
+
+            for (const n of issues) {
+              const nodeId = await issueNodeId(n);
+              const itemId = await ensureItem(projectId, nodeId);
+              await setStatus(itemId, underReview);
+            }
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
+          UNDER_REVIEW_OPTION_ID: ${{ secrets.UNDER_REVIEW_OPTION_ID }}
+
+      - name: Move linked issues to Done on PR merge
+        if: github.event.action == 'closed' && github.event.pull_request.merged == true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          script: |
+            const body = context.payload.pull_request.body || "";
+            const issues = [...body.matchAll(/#(\d+)/g)].map(m => Number(m[1]));
+            if (!issues.length) { core.info('No referenced issues.'); return; }
+
+            const projectId = process.env.PROJECT_ID;
+            const statusFieldId = process.env.STATUS_FIELD_ID;
+            const done = process.env.DONE_OPTION_ID;
+
+            async function issueNodeId(number) {
+              const q = await github.graphql(`
+                query($owner:String!, $repo:String!, $number:Int!) {
+                  repository(owner:$owner, name:$repo) {
+                    issue(number:$number) { node_id }
+                  }
+                }
+              `, { owner: context.repo.owner, repo: context.repo.repo, number });
+              return q.repository.issue.node_id;
+            }
+            async function ensureItem(projectId, contentId) {
+              try {
+                const result = await github.graphql(`
+                  mutation($projectId:ID!, $contentId:ID!) {
+                    addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                      item { id }
+                    }
+                  }
+                `, { projectId, contentId });
+                return result.addProjectV2ItemById.item.id;
+              } catch (e) {
+                const q = await github.graphql(`
+                  query($contentId:ID!) {
+                    node(id: $contentId) {
+                      ... on Issue {
+                        projectV2Items(first: 50) {
+                          nodes { id project { id } }
+                        }
+                      }
+                    }
+                  }
+                `, { contentId });
+                const items = q.node?.projectV2Items?.nodes || [];
+                const found = items.find(n => n.project?.id === projectId);
+                if (!found) throw e;
+                return found.id;
+              }
+            }
+            async function setStatus(itemId, optionId) {
+              await github.graphql(`
+                mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, { projectId, itemId, fieldId: statusFieldId, optionId });
+            }
+
+            for (const n of issues) {
+              const nodeId = await issueNodeId(n);
+              const itemId = await ensureItem(projectId, nodeId);
+              await setStatus(itemId, done);
+            }
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
+          DONE_OPTION_ID: ${{ secrets.DONE_OPTION_ID }}
