@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a reproducible problem
+labels: [bug]
+body:
+  - type: textarea
+    id: desc
+    attributes:
+      label: What happened?
+      description: Describe the bug and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, commands, or screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: Bot version / commit
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: [low, medium, high]

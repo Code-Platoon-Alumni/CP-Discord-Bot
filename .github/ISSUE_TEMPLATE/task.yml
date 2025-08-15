@@ -1,0 +1,15 @@
+name: Task
+description: Track a specific piece of work
+labels: [task]
+body:
+  - type: input
+    id: goal
+    attributes:
+      label: Task goal
+      placeholder: e.g., Draft audit algorithm (stateless)
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
